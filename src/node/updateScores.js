@@ -46,5 +46,4 @@ const updateScores = (data) => {
     },
   );
 };
-
 yesterdayGames.then((r) => updateScores(r));

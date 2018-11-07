@@ -1,4 +1,4 @@
-src/node/.env
+.env
 node_modules/
 src/py/__pycache__/
 venv/
