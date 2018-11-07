@@ -72,7 +72,6 @@ Promise.all([teamStats, teamOpponentStats, todayGames]).then((values) => {
 
   const gamesWithFourFactors = [];
   values[2].forEach((game) => {
-    console.log(game);
     const gameDetail = {
       id: game.id,
       season_id: game.season_id,
@@ -181,9 +180,5 @@ Promise.all([teamStats, teamOpponentStats, todayGames]).then((values) => {
     };
     gamesWithFourFactors.push(gameDetail);
   });
-  // insertGames(gamesWithFourFactors);
-  // gamesWithFourFactors.forEach((g) => {
-  //   console.log(g);
-  // });
-  // console.log(process.env.DB_PASSWORD);
+  insertGames(gamesWithFourFactors);
 });
