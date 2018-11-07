@@ -43,7 +43,7 @@ const todayGames = getGames(
 
 const insertGames = (dataToInsert) => {
   const uri = `mongodb://${process.env.DB_USER}:${
-    process.env.DB_USER
+    process.env.DB_PASSWORD
   }@ds141043.mlab.com:41043/four-factors`;
 
   mongodb.MongoClient.connect(
