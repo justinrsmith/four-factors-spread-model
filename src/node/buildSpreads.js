@@ -11,6 +11,7 @@ const {
 require('dotenv').config();
 
 const today = moment();
+const yesterday = moment().subtract(1, 'days');
 
 const transformTeamStats = (data) => {
   const { headers } = data;
@@ -41,6 +42,16 @@ const todayGames = getGames(
   return resp;
 });
 
+const teamsPlayedYesterday = getGames(
+  yesterday.format('Y'),
+  yesterday.format('M'),
+  yesterday.format('D'),
+).then((resp) => {
+  const home = resp.map((t) => t.home.id);
+  const visitor = resp.map((t) => t.visitor.id);
+  return [...home, ...visitor];
+});
+
 const insertGames = (dataToInsert) => {
   const uri = `mongodb://${process.env.DB_USER}:${
     process.env.DB_PASSWORD
@@ -64,7 +75,12 @@ const insertGames = (dataToInsert) => {
   );
 };
 
-Promise.all([teamStats, teamOpponentStats, todayGames]).then((values) => {
+Promise.all([
+  teamStats,
+  teamOpponentStats,
+  todayGames,
+  teamsPlayedYesterday,
+]).then((values) => {
   const teamStatsFull = [];
   values[0].forEach((itm, i) => {
     teamStatsFull.push(Object.assign({}, itm, values[1][i]));
@@ -80,6 +96,14 @@ Promise.all([teamStats, teamOpponentStats, todayGames]).then((values) => {
       home: game.home,
       visitor: game.visitor,
     };
+
+    // Based on list of teams that played yesterday (by ID) see if either
+    // home or away team is on a b2b and if so flag it
+    gameDetail.home.b2b = values[3].some((teamId) => teamId === game.home.id);
+    gameDetail.visitor.b2b = values[3].some(
+      (teamId) => teamId === game.visitor.id,
+    );
+
     const homeTeamStats = teamStatsFull.find((x) => x.team_id == game.home.id);
     const visitorTeamStats = teamStatsFull.find(
       (x) => x.team_id == game.visitor.id,
