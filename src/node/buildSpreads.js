@@ -204,5 +204,7 @@ Promise.all([
     };
     gamesWithFourFactors.push(gameDetail);
   });
-  insertGames(gamesWithFourFactors);
+  if (gamesWithFourFactors.length) {
+    insertGames(gamesWithFourFactors);
+  }
 });
