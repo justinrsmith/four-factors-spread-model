@@ -109,18 +109,14 @@ Promise.all([
       (x) => x.team_id == game.visitor.id,
     );
 
-    console.log(homeTeamStats);
-
     gameDetail.home.record = `${homeTeamStats.w}-${homeTeamStats.l}`;
     gameDetail.visitor.record = `${visitorTeamStats.w}-${visitorTeamStats.l}`;
 
     const homeFourFactors = {
-      TS:
-        homeTeamStats.pts /
-        (2 * (homeTeamStats.fga + 0.44 * homeTeamStats.fta)),
-      TSopp:
-        homeTeamStats.opp_pts /
-        (2 * (homeTeamStats.opp_fga + 0.44 * homeTeamStats.opp_fta)),
+      eFG: (homeTeamStats.fgm + 0.5 * homeTeamStats.fg3m) / homeTeamStats.fga,
+      eFGopp:
+        (homeTeamStats.opp_fgm + 0.5 * homeTeamStats.opp_fg3m) /
+        homeTeamStats.opp_fga,
       TOV:
         homeTeamStats.tov /
         (homeTeamStats.fga + 0.44 * homeTeamStats.fta + homeTeamStats.tov),
@@ -131,14 +127,16 @@ Promise.all([
           homeTeamStats.opp_tov),
       ORB: homeTeamStats.oreb / (homeTeamStats.oreb + homeTeamStats.opp_dreb),
       DRB: homeTeamStats.dreb / (homeTeamStats.opp_oreb + homeTeamStats.dreb),
+      FG_FGA: homeTeamStats.ftm / homeTeamStats.fga,
+      FG_FGAopp: homeTeamStats.opp_ftm / homeTeamStats.opp_fga,
     };
     const visitorFourFactors = {
-      TS:
-        visitorTeamStats.pts /
-        (2 * (visitorTeamStats.fga + 0.44 * visitorTeamStats.fta)),
-      TSopp:
-        visitorTeamStats.opp_pts /
-        (2 * (visitorTeamStats.opp_fga + 0.44 * visitorTeamStats.opp_fta)),
+      eFG:
+        (visitorTeamStats.fgm + 0.5 * visitorTeamStats.fg3m) /
+        visitorTeamStats.fga,
+      eFGopp:
+        (visitorTeamStats.opp_fgm + 0.5 * visitorTeamStats.opp_fg3m) /
+        visitorTeamStats.opp_fga,
       TOV:
         visitorTeamStats.tov /
         (visitorTeamStats.fga +
@@ -155,25 +153,30 @@ Promise.all([
       DRB:
         visitorTeamStats.dreb /
         (visitorTeamStats.opp_oreb + visitorTeamStats.dreb),
+      FG_FGA: visitorTeamStats.ftm / visitorTeamStats.fga,
+      FG_FGAopp: visitorTeamStats.opp_ftm / visitorTeamStats.opp_fga,
     };
 
     const homeWeights = {
-      TS: (homeFourFactors.TS - homeFourFactors.TSopp) * 100,
+      efg: (homeFourFactors.eFG - homeFourFactors.eFGopp) * 100,
       tov: homeFourFactors.TOVopp * 100 - homeFourFactors.TOV * 100,
       orb: homeFourFactors.ORB * 100 - (100 - homeFourFactors.DRB * 100),
+      fta: (homeFourFactors.FG_FGA - homeFourFactors.FG_FGAopp) * 100,
     };
     const visitorWeights = {
-      TS: (visitorFourFactors.TS - visitorFourFactors.TSopp) * 100,
+      efg: (visitorFourFactors.eFG - visitorFourFactors.eFGopp) * 100,
       tov: visitorFourFactors.TOVopp * 100 - visitorFourFactors.TOV * 100,
       orb: visitorFourFactors.ORB * 100 - (100 - visitorFourFactors.DRB * 100),
+      fta: (visitorFourFactors.FG_FGA - visitorFourFactors.FG_FGAopp) * 100,
     };
 
     const model = {
-      efg: (homeWeights.TS - visitorWeights.TS) * 0.7,
-      tov: (homeWeights.tov - visitorWeights.tov) * 0.15,
-      orb: (homeWeights.orb - visitorWeights.orb) * 0.15,
+      efg: (homeWeights.efg - visitorWeights.efg) * 0.4,
+      tov: (homeWeights.tov - visitorWeights.tov) * 0.25,
+      orb: (homeWeights.orb - visitorWeights.orb) * 0.2,
+      fta: (homeWeights.fta - visitorWeights.fta) * 0.15,
     };
-    const predictedLine = (model.efg + model.tov + model.orb) * 2;
+    const predictedLine = (model.efg + model.tov + model.orb + model.fta) * 2;
 
     gameDetail.home.fourFactors = homeFourFactors;
     gameDetail.visitor.fourFactors = visitorFourFactors;
@@ -201,12 +204,7 @@ Promise.all([
     };
     gamesWithFourFactors.push(gameDetail);
   });
-  // if (gamesWithFourFactors.length) {
-  //   insertGames(gamesWithFourFactors);
-  // }
-  gamesWithFourFactors.forEach((game) => {
-    console.log(game.visitor.nickname, game.line.visitor.predicted);
-    console.log(game.home.nickname, game.line.home.predicted);
-    console.log('*************************');
-  });
+  if (gamesWithFourFactors.length) {
+    insertGames(gamesWithFourFactors);
+  }
 });
