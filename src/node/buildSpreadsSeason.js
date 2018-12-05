@@ -76,6 +76,7 @@ const getGames = (date) => {
     });
 };
 
+let yesterdayGames = null;
 const execute = (date) => {
   const teamStats = getDataFromDb('teamStatsByDay', date).then((r) => {
     return r;
@@ -91,12 +92,17 @@ const execute = (date) => {
 
   Promise.all([teamStats, teamOpponentStats, todayGames]).then((values) => {
     const gamesWithFourFactors = [];
+
+    // If games today
     if (values[2].length) {
+      // For each team go ahead and merge their teamStats object with their
+      // teamOpponentStats object
       const teamStatsFull = [];
       values[0].forEach((itm, i) => {
         teamStatsFull.push(Object.assign({}, itm, values[1][i]));
       });
 
+      // For each game today
       values[2].forEach((game) => {
         const gameDetail = {
           id: game.id,
@@ -107,13 +113,24 @@ const execute = (date) => {
           visitor: game.visitor,
         };
 
-        const homeTeamStats = teamStatsFull.find(
-          (x) => x.team_id == game.home.id,
+        // Based on list of teams that played yesterday (by ID) see if either
+        // home or away team is on a b2b and if so flag it
+        gameDetail.home.b2b = yesterdayGames.some(
+          (teamId) => teamId === game.home.id,
         );
-        const visitorTeamStats = teamStatsFull.find(
-          (x) => x.team_id == game.visitor.id,
+        gameDetail.visitor.b2b = yesterdayGames.some(
+          (teamId) => teamId === game.visitor.id,
         );
 
+        // Search teamStatsFull for home and visitor team stats
+        const homeTeamStats = teamStatsFull.find(
+          (x) => x.team_id === game.home.id,
+        );
+        const visitorTeamStats = teamStatsFull.find(
+          (x) => x.team_id === game.visitor.id,
+        );
+
+        // Build four factor data for team and opponent
         const homeFourFactors = {
           eFG:
             (homeTeamStats.fgm + 0.5 * homeTeamStats.fg3m) / homeTeamStats.fga,
@@ -182,8 +199,18 @@ const execute = (date) => {
           orb: (homeWeights.orb - visitorWeights.orb) * 0.2,
           fta: (homeWeights.fta - visitorWeights.fta) * 0.15,
         };
-        const predictedLine =
-          (model.efg + model.tov + model.orb + model.fta) * 2;
+        let predictedLine = (model.efg + model.tov + model.orb + model.fta) * 2;
+
+        predictedLine += 2.6;
+
+        // fatigue factor
+        if (gameDetail.home.b2b && !gameDetail.visitor.b2b) {
+          console.log('-0.9');
+        } else if (!gameDetail.home.b2b && gameDetail.visitor.b2b) {
+          console.log('-4.3');
+        } else if (gameDetail.home.b2b && gameDetail.visitor.b2b) {
+          console.log('-2.6');
+        }
 
         gameDetail.home.fourFactors = homeFourFactors;
         gameDetail.visitor.fourFactors = visitorFourFactors;
@@ -212,15 +239,15 @@ const execute = (date) => {
         gamesWithFourFactors.push(gameDetail);
       });
     }
-
-    // gamesWithFourFactors.forEach((game) => {
-    //   console.log(game.visitor.nickname, game.line.visitor.predicted);
-    //   console.log(game.home.nickname, game.line.home.predicted);
-    //   console.log('*************************');
-    // });
-    if (gamesWithFourFactors.length) {
-      insertGames(gamesWithFourFactors);
-    }
+    yesterdayGames = todayGames;
+    gamesWithFourFactors.forEach((game) => {
+      console.log(game.visitor.nickname, game.line.visitor.predicted);
+      console.log(game.home.nickname, game.line.home.predicted);
+      console.log('*************************');
+    });
+    // if (gamesWithFourFactors.length) {
+    //   insertGames(gamesWithFourFactors);
+    // }
   });
 };
 
