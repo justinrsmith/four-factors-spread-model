@@ -76,7 +76,6 @@ const getGames = (date) => {
     });
 };
 
-let yesterdayGames = null;
 const execute = (date) => {
   const teamStats = getDataFromDb('teamStatsByDay', date).then((r) => {
     return r;
@@ -89,166 +88,184 @@ const execute = (date) => {
   const todayGames = getGames(date).then((r) => {
     return r;
   });
-
-  Promise.all([teamStats, teamOpponentStats, todayGames]).then((values) => {
-    const gamesWithFourFactors = [];
-
-    // If games today
-    if (values[2].length) {
-      // For each team go ahead and merge their teamStats object with their
-      // teamOpponentStats object
-      const teamStatsFull = [];
-      values[0].forEach((itm, i) => {
-        teamStatsFull.push(Object.assign({}, itm, values[1][i]));
-      });
-
-      // For each game today
-      values[2].forEach((game) => {
-        const gameDetail = {
-          id: game.id,
-          season_id: game.season_id,
-          date: game.date,
-          time: game.time,
-          home: game.home,
-          visitor: game.visitor,
-        };
-
-        // Based on list of teams that played yesterday (by ID) see if either
-        // home or away team is on a b2b and if so flag it
-        gameDetail.home.b2b = yesterdayGames.some(
-          (teamId) => teamId === game.home.id,
-        );
-        gameDetail.visitor.b2b = yesterdayGames.some(
-          (teamId) => teamId === game.visitor.id,
-        );
-
-        // Search teamStatsFull for home and visitor team stats
-        const homeTeamStats = teamStatsFull.find(
-          (x) => x.team_id === game.home.id,
-        );
-        const visitorTeamStats = teamStatsFull.find(
-          (x) => x.team_id === game.visitor.id,
-        );
-
-        // Build four factor data for team and opponent
-        const homeFourFactors = {
-          eFG:
-            (homeTeamStats.fgm + 0.5 * homeTeamStats.fg3m) / homeTeamStats.fga,
-          eFGopp:
-            (homeTeamStats.opp_fgm + 0.5 * homeTeamStats.opp_fg3m) /
-            homeTeamStats.opp_fga,
-          TOV:
-            homeTeamStats.tov /
-            (homeTeamStats.fga + 0.44 * homeTeamStats.fta + homeTeamStats.tov),
-          TOVopp:
-            homeTeamStats.opp_tov /
-            (homeTeamStats.opp_fga +
-              0.44 * homeTeamStats.opp_fta +
-              homeTeamStats.opp_tov),
-          ORB:
-            homeTeamStats.oreb / (homeTeamStats.oreb + homeTeamStats.opp_dreb),
-          DRB:
-            homeTeamStats.dreb / (homeTeamStats.opp_oreb + homeTeamStats.dreb),
-          FG_FGA: homeTeamStats.ftm / homeTeamStats.fga,
-          FG_FGAopp: homeTeamStats.opp_ftm / homeTeamStats.opp_fga,
-        };
-        const visitorFourFactors = {
-          eFG:
-            (visitorTeamStats.fgm + 0.5 * visitorTeamStats.fg3m) /
-            visitorTeamStats.fga,
-          eFGopp:
-            (visitorTeamStats.opp_fgm + 0.5 * visitorTeamStats.opp_fg3m) /
-            visitorTeamStats.opp_fga,
-          TOV:
-            visitorTeamStats.tov /
-            (visitorTeamStats.fga +
-              0.44 * visitorTeamStats.fta +
-              visitorTeamStats.tov),
-          TOVopp:
-            visitorTeamStats.opp_tov /
-            (visitorTeamStats.opp_fga +
-              0.44 * visitorTeamStats.opp_fta +
-              visitorTeamStats.opp_tov),
-          ORB:
-            visitorTeamStats.oreb /
-            (visitorTeamStats.oreb + visitorTeamStats.opp_dreb),
-          DRB:
-            visitorTeamStats.dreb /
-            (visitorTeamStats.opp_oreb + visitorTeamStats.dreb),
-          FG_FGA: visitorTeamStats.ftm / visitorTeamStats.fga,
-          FG_FGAopp: visitorTeamStats.opp_ftm / visitorTeamStats.opp_fga,
-        };
-
-        const homeWeights = {
-          efg: (homeFourFactors.eFG - homeFourFactors.eFGopp) * 100,
-          tov: homeFourFactors.TOVopp * 100 - homeFourFactors.TOV * 100,
-          orb: homeFourFactors.ORB * 100 - (100 - homeFourFactors.DRB * 100),
-          fta: (homeFourFactors.FG_FGA - homeFourFactors.FG_FGAopp) * 100,
-        };
-        const visitorWeights = {
-          efg: (visitorFourFactors.eFG - visitorFourFactors.eFGopp) * 100,
-          tov: visitorFourFactors.TOVopp * 100 - visitorFourFactors.TOV * 100,
-          orb:
-            visitorFourFactors.ORB * 100 - (100 - visitorFourFactors.DRB * 100),
-          fta: (visitorFourFactors.FG_FGA - visitorFourFactors.FG_FGAopp) * 100,
-        };
-
-        const model = {
-          efg: (homeWeights.efg - visitorWeights.efg) * 0.4,
-          tov: (homeWeights.tov - visitorWeights.tov) * 0.25,
-          orb: (homeWeights.orb - visitorWeights.orb) * 0.2,
-          fta: (homeWeights.fta - visitorWeights.fta) * 0.15,
-        };
-        let predictedLine = (model.efg + model.tov + model.orb + model.fta) * 2;
-
-        predictedLine += 2.6;
-
-        // fatigue factor
-        if (gameDetail.home.b2b && !gameDetail.visitor.b2b) {
-          console.log('-0.9');
-        } else if (!gameDetail.home.b2b && gameDetail.visitor.b2b) {
-          console.log('-4.3');
-        } else if (gameDetail.home.b2b && gameDetail.visitor.b2b) {
-          console.log('-2.6');
-        }
-
-        gameDetail.home.fourFactors = homeFourFactors;
-        gameDetail.visitor.fourFactors = visitorFourFactors;
-        gameDetail.predictedLine = predictedLine;
-
-        let homePredictedLine = '';
-        let visitorPredictedLine = '';
-        if (predictedLine > 0) {
-          visitorPredictedLine = `+${predictedLine.toFixed(1)}`;
-          homePredictedLine = `${(predictedLine * -1).toFixed(1)}`;
-        } else {
-          visitorPredictedLine = `${predictedLine.toFixed(1)}`;
-          homePredictedLine = `+${(predictedLine * -1).toFixed(1)}`;
-        }
-
-        gameDetail.line = {
-          home: {
-            actual: null,
-            predicted: homePredictedLine,
-          },
-          visitor: {
-            actual: null,
-            predicted: visitorPredictedLine,
-          },
-        };
-        gamesWithFourFactors.push(gameDetail);
-      });
-    }
-    yesterdayGames = todayGames;
-    gamesWithFourFactors.forEach((game) => {
-      console.log(game.visitor.nickname, game.line.visitor.predicted);
-      console.log(game.home.nickname, game.line.home.predicted);
-      console.log('*************************');
-    });
-    // if (gamesWithFourFactors.length) {
-    //   insertGames(gamesWithFourFactors);
-    // }
+  const yesterdayGames = getGames(
+    moment(date, 'l')
+      .subtract(1, 'days')
+      .format('MM/D/YYYY'),
+  ).then((r) => {
+    const home = r.map((t) => t.home.id);
+    const visitor = r.map((t) => t.visitor.id);
+    return [...home, ...visitor];
   });
+
+  Promise.all([teamStats, teamOpponentStats, todayGames, yesterdayGames]).then(
+    (values) => {
+      const gamesWithFourFactors = [];
+
+      // If games today
+      if (values[2].length) {
+        // For each team go ahead and merge their teamStats object with their
+        // teamOpponentStats object
+        const teamStatsFull = [];
+        values[0].forEach((itm, i) => {
+          teamStatsFull.push(Object.assign({}, itm, values[1][i]));
+        });
+
+        // For each game today
+        values[2].forEach((game) => {
+          const gameDetail = {
+            id: game.id,
+            season_id: game.season_id,
+            date: game.date,
+            time: game.time,
+            home: game.home,
+            visitor: game.visitor,
+          };
+          // Based on list of teams that played yesterday (by ID) see if either
+          // home or away team is on a b2b and if so flag it
+          gameDetail.home.b2b = values[3].some(
+            (teamId) => teamId === game.home.id,
+          );
+          gameDetail.visitor.b2b = values[3].some(
+            (teamId) => teamId === game.visitor.id,
+          );
+
+          // Search teamStatsFull for home and visitor team stats
+          const homeTeamStats = teamStatsFull.find(
+            (x) => x.team_id == game.home.id,
+          );
+          const visitorTeamStats = teamStatsFull.find(
+            (x) => x.team_id == game.visitor.id,
+          );
+
+          // Build four factor data for team and opponent
+          const homeFourFactors = {
+            eFG:
+              (homeTeamStats.fgm + 0.5 * homeTeamStats.fg3m) /
+              homeTeamStats.fga,
+            eFGopp:
+              (homeTeamStats.opp_fgm + 0.5 * homeTeamStats.opp_fg3m) /
+              homeTeamStats.opp_fga,
+            TOV:
+              homeTeamStats.tov /
+              (homeTeamStats.fga +
+                0.44 * homeTeamStats.fta +
+                homeTeamStats.tov),
+            TOVopp:
+              homeTeamStats.opp_tov /
+              (homeTeamStats.opp_fga +
+                0.44 * homeTeamStats.opp_fta +
+                homeTeamStats.opp_tov),
+            ORB:
+              homeTeamStats.oreb /
+              (homeTeamStats.oreb + homeTeamStats.opp_dreb),
+            DRB:
+              homeTeamStats.dreb /
+              (homeTeamStats.opp_oreb + homeTeamStats.dreb),
+            FG_FGA: homeTeamStats.ftm / homeTeamStats.fga,
+            FG_FGAopp: homeTeamStats.opp_ftm / homeTeamStats.opp_fga,
+          };
+          const visitorFourFactors = {
+            eFG:
+              (visitorTeamStats.fgm + 0.5 * visitorTeamStats.fg3m) /
+              visitorTeamStats.fga,
+            eFGopp:
+              (visitorTeamStats.opp_fgm + 0.5 * visitorTeamStats.opp_fg3m) /
+              visitorTeamStats.opp_fga,
+            TOV:
+              visitorTeamStats.tov /
+              (visitorTeamStats.fga +
+                0.44 * visitorTeamStats.fta +
+                visitorTeamStats.tov),
+            TOVopp:
+              visitorTeamStats.opp_tov /
+              (visitorTeamStats.opp_fga +
+                0.44 * visitorTeamStats.opp_fta +
+                visitorTeamStats.opp_tov),
+            ORB:
+              visitorTeamStats.oreb /
+              (visitorTeamStats.oreb + visitorTeamStats.opp_dreb),
+            DRB:
+              visitorTeamStats.dreb /
+              (visitorTeamStats.opp_oreb + visitorTeamStats.dreb),
+            FG_FGA: visitorTeamStats.ftm / visitorTeamStats.fga,
+            FG_FGAopp: visitorTeamStats.opp_ftm / visitorTeamStats.opp_fga,
+          };
+
+          const homeWeights = {
+            efg: (homeFourFactors.eFG - homeFourFactors.eFGopp) * 100,
+            tov: homeFourFactors.TOVopp * 100 - homeFourFactors.TOV * 100,
+            orb: homeFourFactors.ORB * 100 - (100 - homeFourFactors.DRB * 100),
+            fta: (homeFourFactors.FG_FGA - homeFourFactors.FG_FGAopp) * 100,
+          };
+          const visitorWeights = {
+            efg: (visitorFourFactors.eFG - visitorFourFactors.eFGopp) * 100,
+            tov: visitorFourFactors.TOVopp * 100 - visitorFourFactors.TOV * 100,
+            orb:
+              visitorFourFactors.ORB * 100 -
+              (100 - visitorFourFactors.DRB * 100),
+            fta:
+              (visitorFourFactors.FG_FGA - visitorFourFactors.FG_FGAopp) * 100,
+          };
+
+          const model = {
+            efg: (homeWeights.efg - visitorWeights.efg) * 0.4,
+            tov: (homeWeights.tov - visitorWeights.tov) * 0.25,
+            orb: (homeWeights.orb - visitorWeights.orb) * 0.2,
+            fta: (homeWeights.fta - visitorWeights.fta) * 0.15,
+          };
+          let predictedLine =
+            (model.efg + model.tov + model.orb + model.fta) * 2;
+
+          // fatigue factors
+          if (gameDetail.home.b2b && !gameDetail.visitor.b2b) {
+            predictedLine += 0.9;
+          } else if (!gameDetail.home.b2b && gameDetail.visitor.b2b) {
+            predictedLine += 4.3;
+          } else if (gameDetail.home.b2b && gameDetail.visitor.b2b) {
+            predictedLine += 2.6;
+          } else {
+            predictedLine += 2.8;
+          }
+
+          gameDetail.home.fourFactors = homeFourFactors;
+          gameDetail.visitor.fourFactors = visitorFourFactors;
+          gameDetail.predictedLine = predictedLine;
+
+          let homePredictedLine = '';
+          let visitorPredictedLine = '';
+          if (predictedLine > 0) {
+            visitorPredictedLine = `+${predictedLine.toFixed(1)}`;
+            homePredictedLine = `${(predictedLine * -1).toFixed(1)}`;
+          } else {
+            visitorPredictedLine = `${predictedLine.toFixed(1)}`;
+            homePredictedLine = `+${(predictedLine * -1).toFixed(1)}`;
+          }
+
+          gameDetail.line = {
+            home: {
+              actual: null,
+              predicted: homePredictedLine,
+            },
+            visitor: {
+              actual: null,
+              predicted: visitorPredictedLine,
+            },
+          };
+          gamesWithFourFactors.push(gameDetail);
+        });
+      }
+
+      gamesWithFourFactors.forEach((game) => {
+        console.log(game.visitor.nickname, game.line.visitor.predicted);
+        console.log(game.home.nickname, game.line.home.predicted);
+        console.log('*************************');
+      });
+      if (gamesWithFourFactors.length) {
+        insertGames(gamesWithFourFactors);
+      }
+    },
+  );
 };
 
 seasonDates.forEach((date) => {
